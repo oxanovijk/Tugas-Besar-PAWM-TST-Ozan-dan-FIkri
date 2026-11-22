@@ -72,20 +72,24 @@ export function BackButton({ onPress }: { onPress: () => void }) {
   );
 }
 
-export function Button({ children, onPress, icon }: {
+export function Button({ children, onPress, icon, pending = false }: {
   children: string;
   onPress: () => void;
   icon?: IconName;
+  pending?: boolean;
 }) {
   return (
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={children}
+      accessibilityState={{ busy: pending, disabled: pending }}
+      disabled={pending}
       onPress={onPress}
-      style={({ pressed }) => [styles.button, pressed && styles.pressed]}
+      style={({ pressed }) => [styles.button, (pressed || pending) && styles.pressed]}
     >
       <Text style={styles.buttonText}>{children}</Text>
-      {icon && <Icon name={icon} size={17} tint={color.surface} />}
+      {pending ? <ActivityIndicator size="small" color={color.surface} />
+        : icon && <Icon name={icon} size={17} tint={color.surface} />}
     </Pressable>
   );
 }
@@ -107,11 +111,11 @@ export function Chip({ label, selected, onPress }: {
   );
 }
 
-export function Loading() {
+export function Loading({ message = 'Memuat JejakNusantara…' }: { message?: string }) {
   return (
     <View style={styles.feedback} accessibilityLiveRegion="polite">
       <ActivityIndicator color={color.forest} size="small" />
-      <Text style={styles.feedbackText}>Memuat JejakNusantara…</Text>
+      <Text style={styles.feedbackText}>{message}</Text>
     </View>
   );
 }
