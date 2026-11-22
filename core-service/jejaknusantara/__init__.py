@@ -1,0 +1,1 @@
+"""JejakNusantara core service."""
