@@ -1,0 +1,19 @@
+{
+  "expo": {
+    "name": "JejakNusantara",
+    "slug": "jejaknusantara",
+    "scheme": "jejaknusantara",
+    "version": "0.1.0",
+    "platforms": [
+      "android"
+    ],
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "plugins": [
+      "expo-router"
+    ],
+    "android": {
+      "package": "id.jejaknusantara.mobile"
+    }
+  }
+}
