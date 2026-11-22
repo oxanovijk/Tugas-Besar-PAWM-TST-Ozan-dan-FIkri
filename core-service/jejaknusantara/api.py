@@ -3,13 +3,13 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Annotated, Literal
 
-from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response
 from fastapi.exception_handlers import request_validation_exception_handler
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
-from .auth import NO_STORE, create_auth_router
+from .auth import NO_STORE, Account, account_dependency, create_auth_router
 from .database import connect, default_database_path, initialize
 
 
@@ -71,6 +71,67 @@ def create_app(database_path: Path | None = None) -> FastAPI:
         return await request_validation_exception_handler(request, error)
 
     app.include_router(create_auth_router(path))
+    current_account = account_dependency(path)
+    invalid_session = {401: {"description": "Sesi tidak valid atau sudah berakhir"}}
+
+    @app.get(
+        "/api/me/favorites",
+        response_model=list[DestinationSummary],
+        tags=["Favorit"],
+        summary="Lihat destinasi favorit akun",
+        responses=invalid_session,
+    )
+    def list_favorites(response: Response, account: Annotated[Account, Depends(current_account)]):
+        with connect(path) as database:
+            favorites = database.execute("""
+                SELECT d.id, d.name, d.region, d.category, d.description
+                FROM user_favorites AS f
+                JOIN destinations AS d ON d.id = f.destination_id
+                WHERE f.user_id = ? AND d.status = 'published'
+                ORDER BY fold_text(d.name), d.id
+            """, (account.id,)).fetchall()
+        response.headers.update(NO_STORE)
+        return [dict(destination) for destination in favorites]
+
+    @app.put(
+        "/api/me/favorites/{destination_id}",
+        status_code=204,
+        tags=["Favorit"],
+        summary="Tambahkan destinasi terbit ke favorit",
+        responses={**invalid_session, 404: {"description": "Destinasi tidak ditemukan"}},
+    )
+    def add_favorite(destination_id: str, account: Annotated[Account, Depends(current_account)]):
+        with connect(path) as database:
+            added = database.execute("""
+                INSERT INTO user_favorites (user_id, destination_id)
+                SELECT ?, id FROM destinations WHERE id = ? AND status = 'published'
+                ON CONFLICT (user_id, destination_id) DO NOTHING
+            """, (account.id, destination_id))
+            if added.rowcount == 0:
+                published = database.execute(
+                    "SELECT 1 FROM destinations WHERE id = ? AND status = 'published'",
+                    (destination_id,),
+                ).fetchone()
+                if published is None:
+                    raise HTTPException(
+                        status_code=404, detail="Destinasi tidak ditemukan", headers=NO_STORE,
+                    )
+        return Response(status_code=204, headers=NO_STORE)
+
+    @app.delete(
+        "/api/me/favorites/{destination_id}",
+        status_code=204,
+        tags=["Favorit"],
+        summary="Hapus destinasi dari favorit akun",
+        responses=invalid_session,
+    )
+    def remove_favorite(destination_id: str, account: Annotated[Account, Depends(current_account)]):
+        with connect(path) as database:
+            database.execute(
+                "DELETE FROM user_favorites WHERE user_id = ? AND destination_id = ?",
+                (account.id, destination_id),
+            )
+        return Response(status_code=204, headers=NO_STORE)
 
     @app.get(
         "/api/health",

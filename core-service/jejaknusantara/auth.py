@@ -131,8 +131,28 @@ def _create_session(path: Path, account: Account, email_key: str) -> LoginResult
     return LoginResult(access_token=token, user=account)
 
 
+def account_dependency(path: Path):
+    def current_account(
+        credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(BEARER)],
+    ) -> Account:
+        token_hash = _token_hash(credentials)
+        with connect(path) as database:
+            user = database.execute("""
+                SELECT u.id, u.email
+                FROM auth_sessions AS s
+                JOIN auth_users AS u ON u.id = s.user_id
+                WHERE s.token_hash = ? AND s.expires_at > ?
+            """, (token_hash, int(time()))).fetchone()
+        if user is None:
+            raise _session_required()
+        return Account(id=user["id"], email=user["email"])
+
+    return current_account
+
+
 def create_auth_router(path: Path) -> APIRouter:
     router = APIRouter(prefix="/api/auth", tags=["Akun"])
+    current_account = account_dependency(path)
     invalid_session = {401: {"description": "Sesi tidak valid atau sudah berakhir"}}
 
     @router.post(
@@ -171,22 +191,9 @@ def create_auth_router(path: Path) -> APIRouter:
             PASSWORD_CHECKS.release()
 
     @router.get("/me", response_model=Account, responses=invalid_session)
-    def profile(
-        response: Response,
-        credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(BEARER)],
-    ):
-        token_hash = _token_hash(credentials)
-        with connect(path) as database:
-            user = database.execute("""
-                SELECT u.id, u.email
-                FROM auth_sessions AS s
-                JOIN auth_users AS u ON u.id = s.user_id
-                WHERE s.token_hash = ? AND s.expires_at > ?
-            """, (token_hash, int(time()))).fetchone()
-        if user is None:
-            raise _session_required()
+    def profile(response: Response, account: Annotated[Account, Depends(current_account)]):
         response.headers.update(NO_STORE)
-        return Account(id=user["id"], email=user["email"])
+        return account
 
     @router.post("/logout", status_code=204, responses=invalid_session)
     def logout(credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(BEARER)]):

@@ -76,4 +76,10 @@ def initialize(path: Path) -> None:
 
             CREATE INDEX IF NOT EXISTS auth_attempts_by_reset
                 ON auth_attempts (reset_at);
+
+            CREATE TABLE IF NOT EXISTS user_favorites (
+                user_id TEXT NOT NULL REFERENCES auth_users(id) ON DELETE CASCADE,
+                destination_id TEXT NOT NULL REFERENCES destinations(id) ON DELETE CASCADE,
+                PRIMARY KEY (user_id, destination_id)
+            );
         """)
