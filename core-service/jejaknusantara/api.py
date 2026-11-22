@@ -3,9 +3,13 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Annotated, Literal
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi.exception_handlers import request_validation_exception_handler
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
+from .auth import NO_STORE, create_auth_router
 from .database import connect, default_database_path, initialize
 
 
@@ -56,6 +60,17 @@ def create_app(database_path: Path | None = None) -> FastAPI:
         redoc_url=None,
         redirect_slashes=False,
     )
+
+    @app.exception_handler(RequestValidationError)
+    async def handle_validation(request: Request, error: RequestValidationError):
+        route = request.scope.get("route")
+        if getattr(route, "path", None) == "/api/auth/login":
+            return JSONResponse(
+                status_code=422, content={"detail": "Data login tidak valid."}, headers=NO_STORE,
+            )
+        return await request_validation_exception_handler(request, error)
+
+    app.include_router(create_auth_router(path))
 
     @app.get(
         "/api/health",
